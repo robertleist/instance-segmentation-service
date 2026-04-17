@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass
 from os import getenv
+import re
 import secrets
 
 from iquana_toolbox.mlflow import MLFlowModelRegistry
@@ -11,10 +12,11 @@ from paths import MLFLOW_URL
 logger = logging.getLogger(__name__)
 
 INSTANCE_SEGMENTATION_TASK_TAG = "instance-segmentation"
-SERVICE_REGISTRATION_TOKEN = getenv(
-    "SERVICE_REGISTRATION_TOKEN",
-    getenv("SERVICE_SECRET", "default-secret"),
-)
+_raw_registration_token = getenv("SERVICE_REGISTRATION_TOKEN")
+SERVICE_REGISTRATION_TOKEN = _raw_registration_token.strip() if _raw_registration_token else None
+if _raw_registration_token is not None and not SERVICE_REGISTRATION_TOKEN:
+    logger.warning("SERVICE_REGISTRATION_TOKEN is empty; registration will be rejected")
+MODEL_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
 @dataclass
@@ -32,6 +34,9 @@ MODEL_REGISTRY = MLFlowModelRegistry(MLFLOW_URL)
 
 
 def validate_registration_token(registration_token: str) -> bool:
+    if not SERVICE_REGISTRATION_TOKEN:
+        logger.error("SERVICE_REGISTRATION_TOKEN is not configured")
+        return False
     return secrets.compare_digest(registration_token, SERVICE_REGISTRATION_TOKEN)
 
 
@@ -60,10 +65,9 @@ def get_backend_token() -> str | None:
     return _backend_token
 
 
-def get_instance_segmentation_model_names() -> set[str]:
-    models = MODEL_REGISTRY.get_models_via_tags({"task": INSTANCE_SEGMENTATION_TASK_TAG})
-    return {model["name"] for model in models}
-
-
 def get_model_registry() -> MLFlowModelRegistry:
     return MODEL_REGISTRY
+
+
+def is_valid_model_key(model_key: str) -> bool:
+    return bool(MODEL_KEY_PATTERN.fullmatch(model_key))

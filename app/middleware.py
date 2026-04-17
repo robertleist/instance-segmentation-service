@@ -10,6 +10,8 @@ PUBLIC_PATHS = {
     "/redoc",
     "/health",
     "/register",
+    # Kept public for compatibility with the base service template.
+    "/item",
 }
 
 

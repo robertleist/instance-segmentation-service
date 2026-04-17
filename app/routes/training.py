@@ -2,10 +2,11 @@ import logging
 
 from celery.result import AsyncResult
 from fastapi import APIRouter, Depends, HTTPException
+from mlflow.exceptions import RestException
 from pydantic import BaseModel, Field
 
 from app.dependencies import get_current_backend
-from app.state import Backend, get_instance_segmentation_model_names
+from app.state import Backend, INSTANCE_SEGMENTATION_TASK_TAG, get_model_registry, is_valid_model_key
 from app.tasks import train_model
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,16 @@ async def start_training(
 ):
     """Start a training job asynchronously via Celery."""
     try:
-        if request.model_id not in get_instance_segmentation_model_names():
+        if not is_valid_model_key(request.model_id):
+            raise HTTPException(status_code=400, detail="Invalid model registry key format")
+        model_registry = get_model_registry()
+        try:
+            registered_model = model_registry.client.get_registered_model(request.model_id)
+        except RestException as exc:
+            raise HTTPException(status_code=404, detail="Model not found in registry") from exc
+
+        tags = getattr(registered_model, "tags", {})
+        if tags.get("task") != INSTANCE_SEGMENTATION_TASK_TAG:
             raise HTTPException(
                 status_code=404,
                 detail=f"Model '{request.model_id}' is not tagged with task:instance-segmentation",
@@ -38,8 +48,6 @@ async def start_training(
             backend.mlflow_tracking_uri,
         )
         return {"task_id": task.id}
-    except HTTPException:
-        raise
     except Exception as exc:
         logger.error("Failed to start training for backend '%s': %s", backend.backend_address, exc)
         raise HTTPException(status_code=500, detail="Failed to start training") from exc

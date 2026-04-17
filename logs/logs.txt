@@ -1,0 +1,6 @@
+2026-04-17 08:30:27,950 app DEBUG Creating FastAPI application
+2026-04-17 08:30:27,966 httpx INFO HTTP Request: POST http://testserver/register "HTTP/1.1 200 OK"
+2026-04-17 08:30:27,969 httpx INFO HTTP Request: GET http://testserver/models "HTTP/1.1 200 OK"
+2026-04-17 08:30:27,973 app.routes.inference DEBUG Inference executed with 1-argument predictor signature
+2026-04-17 08:30:27,974 httpx INFO HTTP Request: POST http://testserver/inference "HTTP/1.1 200 OK"
+2026-04-17 08:30:27,976 httpx INFO HTTP Request: POST http://testserver/train "HTTP/1.1 200 OK"

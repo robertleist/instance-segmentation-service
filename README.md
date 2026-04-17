@@ -41,7 +41,7 @@ This service is designed to be registered with a single main backend at runtime.
    ```bash
    export SERVICE_REGISTRATION_TOKEN="your-secret-token"
    ```
-   If not set, defaults to `SERVICE_SECRET` env var, or `"default-secret"` as fallback.
+   The service rejects registration if this environment variable is not set or is empty.
 
 2. **Start the service**:
    ```bash
