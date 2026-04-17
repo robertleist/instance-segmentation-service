@@ -1,32 +1,45 @@
 import logging
 
 from celery.result import AsyncResult
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
-from app.state import MODEL_REGISTRY
+from app.dependencies import get_current_backend
+from app.state import Backend, get_instance_segmentation_model_names
 from app.tasks import train_model
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
+class TrainingRequest(BaseModel):
+    model_id: str
+    dataset_path: str
+    params: dict = Field(default_factory=dict)
+
+
 @router.post("/train")
 async def start_training(
-    # TODO: Replace with your service-specific training request schema.
-    request: dict = Body(...)
+    request: TrainingRequest,
+    backend: Backend = Depends(get_current_backend),
 ):
-    """Start a training job asynchronously. Delegates the training tasks to Celery workers."""
+    """Start a training job asynchronously via Celery."""
     try:
+        if request.model_id not in get_instance_segmentation_model_names():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model '{request.model_id}' is not tagged with task:instance-segmentation",
+            )
         task = train_model.delay(
-            request.get("model_id"),
-            request.get("dataset_path"),
-            request.get("params", {}),
-            MODEL_REGISTRY.tracking_uri,
+            request.model_id,
+            request.dataset_path,
+            request.params,
+            backend.mlflow_tracking_uri,
         )
         return {"task_id": task.id}
-    except AttributeError as exc:
-        logger.error("Training request schema mismatch: %s", exc)
-        raise HTTPException(status_code=400, detail="Invalid training request payload") from exc
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error("Failed to start training for backend '%s': %s", backend.backend_address, exc)
         raise HTTPException(status_code=500, detail="Failed to start training") from exc

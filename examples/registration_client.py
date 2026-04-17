@@ -60,17 +60,17 @@ class ServiceRegistrationClient:
         
         return response.json()
 
-    def call_with_api_key(
+    def call_with_token(
         self,
         endpoint: str,
         method: str = "GET",
         data: Optional[dict] = None,
-        api_key: Optional[str] = None,
+        backend_token: Optional[str] = None,
     ) -> dict:
         """Make an authenticated request to the service."""
         headers = {}
-        if api_key:
-            headers["X-API-Key"] = api_key
+        if backend_token:
+            headers["Authorization"] = f"Bearer {backend_token}"
         
         url = f"{self.service_url}{endpoint}"
         
@@ -99,10 +99,10 @@ if __name__ == "__main__":
     print(json.dumps(result, indent=2))
     
     if result.get("success"):
-        # Now you can call protected endpoints with the API key
-        models = client.call_with_api_key(
-            "/get_available_models",
-            api_key="my-service-key-12345"
+        # Now you can call protected endpoints with the backend bearer token
+        models = client.call_with_token(
+            "/models",
+            backend_token=result.get("backend_token")
         )
         print("\nAvailable models:")
         print(json.dumps(models, indent=2))

@@ -1,5 +1,5 @@
-# Template Repository
-This is a template repository meant to be used to add new services to the IQUANA annotation tool. You can copy this repository to implement your own service for the tool. 
+# Instance Segmentation Service
+This repository implements an IQUANA-compatible microservice for instance segmentation inference and training.
 >[!IMPORTANT]
 > With this repo you can only implement your own service to run on its own. To be able to use it in the annotation tool, you still need to add it to the main API and depending on your service the frontend (to add the needed inputs). 
 ## Installation & Packages
@@ -155,7 +155,7 @@ The service uses MLFlow for model management, including registration, versioning
 
 Each model has metadata like name, description, tags, and training config. MLFlow handles loading and caching automatically.
 ### Inference
-If image and model are selected and loaded, you can run inference. This endpoint does not come with predefined functionality. You need to implement it yourself. The route already resolves the registered backend through a FastAPI dependency so you can access `backend.mlflow_tracking_uri` and other backend metadata directly.
+Inference requests are executed synchronously (not through Celery). The service fetches models from MLflow that are tagged with `task:instance-segmentation`, loads the latest registered version, and runs prediction immediately.
 ### Training
 For AI training, the service now supports asynchronous model training using Celery for background task processing.
 1. Upload a dataset (similar to images).
@@ -166,6 +166,8 @@ For AI training, the service now supports asynchronous model training using Cele
 The training route currently accepts a raw JSON body as a placeholder. Replace it with a service-specific Pydantic schema once you define your training API.
 
 Endpoints:
+- `GET /models`: List MLflow models tagged with `task:instance-segmentation`.
+- `POST /inference`: Run immediate inference for an instance segmentation request.
 - `POST /train`: Start a training job (returns task ID).
 - `DELETE /train/{task_id}`: Cancel a training job.
 

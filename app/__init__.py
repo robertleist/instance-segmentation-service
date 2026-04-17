@@ -6,11 +6,13 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.middleware import BackendAuthMiddleware
 from paths import SERVICE_NAME, SERVICE_DESCRIPTION, ALLOWED_ORIGINS
 
 # Router imports
 from app.routes import router as health_router
 from app.routes.inference import router as inference_router
+from app.routes.registration import router as registration_router
 from app.routes.training import router as training_router
 
 logger = getLogger(__name__)
@@ -47,9 +49,11 @@ def create_app():
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(BackendAuthMiddleware)
 
     # Include the routers
     app.include_router(health_router)
+    app.include_router(registration_router)
     app.include_router(inference_router)
     app.include_router(training_router)
 
