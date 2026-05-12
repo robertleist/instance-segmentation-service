@@ -1,7 +1,6 @@
 import mlflow.pyfunc
 from iquana_toolbox.schemas.database.contours import Contour
 from iquana_toolbox.schemas.networking.http.services import InstanceSegmentationRequest
-from iquana_toolbox.schemas.models import I
 from abc import ABC, abstractmethod
 
 from iquana_toolbox.schemas.training import InstanceSegmentationTrainingRequest
