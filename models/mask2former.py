@@ -1,13 +1,14 @@
-import io
 import logging
-import tempfile
 from typing import Optional
 
 import mlflow
 import numpy as np
-import requests
 import torch
-from PIL import Image
+from iquana_toolbox.ai.dataloaders import get_coco_instance_segmentation_dataset
+from iquana_toolbox.mlflow import MLFlowModelRegistry
+from iquana_toolbox.schemas.database.contours import Contour
+from iquana_toolbox.schemas.networking.http.services import InstanceSegmentationRequest
+from iquana_toolbox.schemas.training import InstanceSegmentationTrainingRequest
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from transformers import (
@@ -16,11 +17,7 @@ from transformers import (
     Mask2FormerImageProcessor,
 )
 
-from iquana_toolbox.schemas.database.contours import Contour
-from iquana_toolbox.schemas.networking.http.services import InstanceSegmentationRequest
-from iquana_toolbox.schemas.training import InstanceSegmentationTrainingRequest
 from models.base_model import BaseInstanceSegmentationModel
-from iquana_toolbox.ai.dataloaders import get_coco_instance_segmentation_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -70,11 +67,11 @@ class Mask2FormerSegmentationModel(BaseInstanceSegmentationModel):
     }
 
     def __init__(
-        self,
-        model_name_or_path: str = DEFAULT_HF_MODEL,
-        mlflow_tracking_uri: str = "http://localhost:5000",
-        model_name: str = "mask2former-seg",
-        device: Optional[str] = None,
+            self,
+            model_name_or_path: str = DEFAULT_HF_MODEL,
+            mlflow_tracking_uri: str = "http://localhost:5000",
+            model_name: str = "mask2former-seg",
+            device: Optional[str] = None,
     ):
         """
         Args:
@@ -187,39 +184,27 @@ class Mask2FormerSegmentationModel(BaseInstanceSegmentationModel):
             annotation_file=request.annotation_file_url,
         )
 
-        # Split into train/val
-        n_train = max(1, int(len(dataset) * 0.8))
-        train_dataset = torch.utils.data.Subset(dataset, range(n_train))
-        val_dataset = torch.utils.data.Subset(dataset, range(n_train, len(dataset)))
-
-        logger.info(
-            "Dataset split: %d train, %d val. Starting fine-tuning with params: %s",
-            len(train_dataset),
-            len(val_dataset),
-            params,
-        )
-
         # Train model
-        final_loss = self._run_training(train_dataset, params)
+        final_loss = self._train(dataset, params)
 
         logger.info("Fine-tuning complete (final loss: %.4f). Logging to MLflow…", final_loss)
 
-        # Log to MLflow
-        self._log_to_mlflow(final_loss, params, request.label)
 
     # -----------------------------------------------------------------------
     # Training loop
     # -----------------------------------------------------------------------
 
-    def _run_training(
-        self,
-        train_dataset: torch.utils.data.Dataset,
-        params: dict,
+    def _train(
+            self,
+            train_dataset: torch.utils.data.Dataset,
+            params: dict,
     ) -> float:
         """
         Fine-tune Mask2Former on the training dataset.
         Returns the average loss of the last epoch.
         """
+        mlflow.log_params(params)
+        mlflow.log_param("num_samples", len(train_dataset))
         loader = DataLoader(
             train_dataset,
             batch_size=params["batch_size"],
@@ -269,67 +254,12 @@ class Mask2FormerSegmentationModel(BaseInstanceSegmentationModel):
                     )
 
             last_loss = epoch_loss / max(len(loader), 1)
+            mlflow.log_metric("loss", last_loss)
             logger.info("Epoch %d/%d — avg loss: %.4f", epoch + 1, params["epochs"], last_loss)
 
         self.hf_model.eval()
         return last_loss
 
-    # -----------------------------------------------------------------------
-    # MLflow logging
-    # -----------------------------------------------------------------------
-
-    def _log_to_mlflow(self, final_loss: float, params: dict, label) -> None:
-        """
-        Save model + processor and log to MLflow.
-        Register a new model version in the model registry.
-        """
-        mlflow.set_tracking_uri(self.mlflow_tracking_uri)
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Save model and processor
-            self.hf_model.save_pretrained(tmpdir)
-            self.processor.save_pretrained(tmpdir)
-
-            with mlflow.start_run(run_name=f"{self.model_name}-{label.name}") as run:
-                # Log hyperparameters
-                mlflow.log_params(
-                    {
-                        **params,
-                        "label_name": label.name,
-                        "label_id": label.id,
-                        "model_architecture": "mask2former-swin-tiny",
-                    }
-                )
-
-                # Log metrics
-                mlflow.log_metric("final_train_loss", final_loss)
-
-                # Log model artifacts (full saved model directory)
-                mlflow.log_artifacts(tmpdir, artifact_path="model")
-
-                # Register in MLflow model registry
-                artifact_uri = f"runs:/{run.info.run_id}/model"
-                client = mlflow.MlflowClient()
-
-                try:
-                    client.create_registered_model(self.model_name)
-                    logger.info("Created new registered model '%s'", self.model_name)
-                except mlflow.exceptions.MlflowException:
-                    # Model already exists
-                    pass
-
-                model_version = client.create_model_version(
-                    name=self.model_name,
-                    source=artifact_uri,
-                    run_id=run.info.run_id,
-                )
-
-                logger.info(
-                    "MLflow run '%s' logged. Model '%s' version %s registered.",
-                    run.info.run_id,
-                    self.model_name,
-                    model_version.version,
-                )
 
     # -----------------------------------------------------------------------
     # Batch processing helper
@@ -344,4 +274,3 @@ class Mask2FormerSegmentationModel(BaseInstanceSegmentationModel):
         images = [item["image"] for item in batch]
         annotations = [item["annotations"] for item in batch]
         return {"images": images, "annotations": annotations}
-

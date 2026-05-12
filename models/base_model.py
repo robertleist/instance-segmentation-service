@@ -1,11 +1,13 @@
+import mlflow.pyfunc
 from iquana_toolbox.schemas.database.contours import Contour
 from iquana_toolbox.schemas.networking.http.services import InstanceSegmentationRequest
+from iquana_toolbox.schemas.models import I
 from abc import ABC, abstractmethod
 
 from iquana_toolbox.schemas.training import InstanceSegmentationTrainingRequest
 
 
-class BaseInstanceSegmentationModel(ABC):
+class BaseInstanceSegmentationModel(ABC, mlflow.pyfunc.PythonModel):
     """
     Abstract base class for instance segmentation models. Defines the interface that all instance segmentation
     models must implement.

@@ -4,7 +4,7 @@ from celery.result import AsyncResult
 from fastapi import APIRouter, Body, HTTPException
 
 from app.state import MODEL_REGISTRY
-from app.tasks import train_model
+from app.tasks import train_and_register_model
 from iquana_toolbox.schemas.training import InstanceSegmentationTrainingRequest
 
 from util.validate_model import validate_model
@@ -19,8 +19,7 @@ async def start_training(
 ):
     """Start a training job asynchronously. Delegates the training tasks to Celery workers."""
     validate_model(request)
-    task = train_model.delay(
-        model_registry_key=request.model_registry_key,
+    task = train_and_register_model.delay(
         request_dict=request.model_dump(),  # serialize to dict for Celery/Redis
     )
     return {"task_id": task.id}

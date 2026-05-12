@@ -1,32 +1,45 @@
+import mlflow
+
 from celery_app import app
 import logging
-import mlflow
-import mlflow.pytorch  # Assuming PyTorch models; adjust for other frameworks
+from iquana_toolbox.mlflow import MLFlowModelRegistry
+from paths import MLFLOW_URL
+from iquana_toolbox.schemas.training import InstanceSegmentationTrainingRequest
 
 logger = logging.getLogger(__name__)
 
 @app.task(bind=True)
-def train_model(self, model_id, dataset_path, params, mlflow_tracking_uri: str):
-    """Background task for training a model."""
+def train_and_register_model(self, request_dict: dict):
+    """
+    Generic training dispatcher. Loads the model from the registry and
+    delegates all training logic to the model's own train() method.
+    """
     try:
-        # Load base model if needed
-        model_registry = mlflow.MlflowClient(tracking_uri=mlflow_tracking_uri)
-        base_model = model_registry.get_logged_model(model_id)
+        registry: MLFlowModelRegistry = MLFlowModelRegistry(MLFLOW_URL)
 
-        # Implement training logic (e.g., using PyTorch/TensorFlow)
-        # For example:
-        # model = train_your_model(dataset_path, params)
-        self.update_state(state='PROGRESS', meta={'progress': 50})
-        # Save model to path
+        # Reconstruct the typed request inside the worker
+        request = InstanceSegmentationTrainingRequest.model_validate(request_dict)
+        model = registry.get_model_by_alias(request.model_registry_key, "latest")
 
-        # Log to MLFlow
-        mlflow.set_tracking_uri(mlflow_tracking_uri)
-        with mlflow.start_run() as run:
-            mlflow.log_params(params)
-            mlflow.log_artifact(dataset_path, "dataset")
-            mlflow.pytorch.log_model(base_model, "model")
+        # Copy tags from the existing model and add new ones for this training run
+        # Note: Tags only get added when the training finishes.
+        old_tags = model.tags
+        new_tags = old_tags.copy()
+        new_tags["dataset_id"] = request.dataset_id
+        new_tags["created_by"] = request.user_id
+        new_tags["label"] = request.label
 
-        return {"status": "completed", "model_id": f"{model_id}_trained"}
+        self.update_state(state='PROGRESS', meta={'status': 'training started'})
+        with mlflow.start_run(run_id=self.id):
+            model.train(request)
+            new_model = mlflow.pyfunc.log_model(
+                python_model=self,
+                artifact_path="model",
+                registered_model_name=request.model_registry_key,
+                tags=new_tags,
+            )
+
+        return {"status": "completed", "model": new_model.model_id}
     except Exception as e:
-        logger.error(f"Training failed: {e}")
+        logger.error(f"Training failed for {model_registry_key}: {e}")
         raise self.retry(countdown=60, max_retries=3)
