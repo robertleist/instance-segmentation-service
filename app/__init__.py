@@ -12,6 +12,8 @@ from paths import SERVICE_NAME, SERVICE_DESCRIPTION, ALLOWED_ORIGINS
 from app.routes import router as health_router
 from app.routes.inference import router as inference_router
 from app.routes.training import router as training_router
+from app.routes.models import router as model_router
+from app.routes.models import session_router as session_model_router
 
 logger = getLogger(__name__)
 logger.setLevel(DEBUG)
@@ -52,5 +54,7 @@ def create_app():
     app.include_router(health_router)
     app.include_router(inference_router)
     app.include_router(training_router)
+    app.include_router(model_router)
+    app.include_router(session_model_router)
 
     return app
