@@ -4,7 +4,7 @@ from iquana_toolbox.schemas.database.contours import Contour
 from app.state import MODEL_REGISTRY
 from iquana_toolbox.schemas.networking.http.services import InstanceSegmentationRequest
 
-from models.base_model import BaseInstanceSegmentationModel
+from iquana_toolbox.ai.base_classes import InstanceSegmentationModel
 from util.validate_model import validate_model
 
 router = APIRouter()
@@ -17,5 +17,5 @@ async def inference(request: InstanceSegmentationRequest) -> list[Contour]:
     """
     # Validates the model selection
     validate_model(request)
-    model: BaseInstanceSegmentationModel = MODEL_REGISTRY.get_model_by_alias(request.model_registry_key, "latest")
-    return model.inference(request)
+    model = MODEL_REGISTRY.get_model_by_alias(request.model_registry_key, "latest")
+    return model.predict(model_input=request)
