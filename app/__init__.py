@@ -14,6 +14,8 @@ from app.routes.inference import router as inference_router
 from app.routes.training import router as training_router
 from app.routes.models import router as model_router
 from app.routes.models import session_router as session_model_router
+from util.registry_util import _PENDING_REGISTRATIONS
+from app.state import MODEL_REGISTRY
 
 logger = getLogger(__name__)
 logger.setLevel(DEBUG)
@@ -22,11 +24,12 @@ logger.setLevel(DEBUG)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup code
-    logger.debug("Starting up the Prompted Segmentation Service")
-    logger.debug("Celery initialized")
+    logger.info(f"Starting up {SERVICE_NAME}")
+    # Registering models
+    MODEL_REGISTRY.ensure_models_are_registered(_PENDING_REGISTRATIONS)
     yield
     # Shutdown code
-    logger.debug("Shutting down the Prompted Segmentation Service")
+    logger.debug(f"Shutting down {SERVICE_NAME}")
 
 
 def create_app():
