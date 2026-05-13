@@ -1,4 +1,5 @@
 import mlflow
+from iquana_toolbox.ai.base_classes import InstanceSegmentationModel
 
 from celery_app import app
 import logging
@@ -19,27 +20,17 @@ def train_and_register_model(self, request_dict: dict):
 
         # Reconstruct the typed request inside the worker
         request = InstanceSegmentationTrainingRequest.model_validate(request_dict)
-        model = registry.get_model_by_alias(request.model_registry_key, "latest")
-
-        # Copy tags from the existing model and add new ones for this training run
-        # Note: Tags only get added when the training finishes.
-        old_tags = model.tags
-        new_tags = old_tags.copy()
-        new_tags["dataset_id"] = request.dataset_id
-        new_tags["created_by"] = request.user_id
-        new_tags["label"] = request.label
+        model: InstanceSegmentationModel = registry.get_model_by_alias(request.model_registry_key, "latest")._model_impl
 
         self.update_state(state='PROGRESS', meta={'status': 'training started'})
         with mlflow.start_run(run_id=self.id):
             model.train(request)
-            new_model = mlflow.pyfunc.log_model(
-                python_model=self,
-                artifact_path="model",
-                registered_model_name=request.model_registry_key,
-                tags=new_tags,
-            )
+            # You need to specify the dataset_id and user_id or else the model does not get logged.
+            model.model_info.tags["dataset_id"] = request.dataset_id
+            model.model_info.tags["user_id"] = request.user_id
+            registry.register_model(model)
 
-        return {"status": "completed", "model": new_model.model_id}
+        return {"status": "completed"}
     except Exception as e:
-        logger.error(f"Training failed for {model_registry_key}: {e}")
+        logger.error(f"Training failed: {e}")
         raise self.retry(countdown=60, max_retries=3)
