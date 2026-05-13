@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Optional, Any
 
 import mlflow
 import numpy as np
@@ -7,8 +7,11 @@ import torch
 from iquana_toolbox.ai.dataloaders import get_coco_instance_segmentation_dataset
 from iquana_toolbox.mlflow import MLFlowModelRegistry
 from iquana_toolbox.schemas.database.contours import Contour
+from iquana_toolbox.schemas.database.labels import Label
 from iquana_toolbox.schemas.networking.http.services import InstanceSegmentationRequest
 from iquana_toolbox.schemas.training import InstanceSegmentationTrainingRequest
+from iquana_toolbox.ai.base_classes import InstanceSegmentationModel, InstanceSegmentationModelInfo
+from mlflow import register_model
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from transformers import (
@@ -17,7 +20,7 @@ from transformers import (
     Mask2FormerImageProcessor,
 )
 
-from models.base_model import BaseInstanceSegmentationModel
+from util.registry_util import register_base_model
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +33,8 @@ DEFAULT_HF_MODEL = "facebook/mask2former-swin-tiny-coco-instance"
 # Model wrapper
 # ---------------------------------------------------------------------------
 
-class Mask2FormerSegmentationModel(BaseInstanceSegmentationModel):
+@register_base_model()
+class Mask2Former(InstanceSegmentationModel):
     """
     Instance segmentation wrapper backed by Mask2Former (HuggingFace Transformers).
 
@@ -58,8 +62,26 @@ class Mask2FormerSegmentationModel(BaseInstanceSegmentationModel):
 
     Coordinates in Contour are already normalised to [0, 1].
     """
-
-    DEFAULT_HYPERPARAMETERS: dict = {
+    model_info = InstanceSegmentationModelInfo(
+        registry_key="mask2former",
+        name="Mask2Former",
+        description=(
+            "The Mask2Former model was proposed in Masked-attention Mask Transformer for Universal Image Segmentation by"
+            " Bowen Cheng, Ishan Misra, Alexander G. Schwing, Alexander Kirillov, Rohit Girdhar. Mask2Former is a "
+            "unified framework for panoptic, instance and semantic segmentation and features significant performance and "
+            "efficiency improvements over MaskFormer."
+        ),
+        usage_tip="Works well with general domain images.",
+        info_url=r"https://huggingface.co/docs/transformers/model_doc/mask2former",
+        tags={
+            "task": "instance segmentation",
+            "domain": "general",
+            "publisher": "meta",
+        },
+        badges=["fast", "pretrained"],
+        trainable=True
+    )
+    default_hyperparameters: dict = {
         "epochs": 10,
         "batch_size": 2,
         "lr": 1e-5,
@@ -69,46 +91,38 @@ class Mask2FormerSegmentationModel(BaseInstanceSegmentationModel):
     def __init__(
             self,
             model_name_or_path: str = DEFAULT_HF_MODEL,
-            mlflow_tracking_uri: str = "http://localhost:5000",
-            model_name: str = "mask2former-seg",
             device: Optional[str] = None,
     ):
-        """
-        Args:
-            model_name_or_path:    HuggingFace Hub id or local directory with
-                                   saved model + processor weights.
-            mlflow_tracking_uri:   MLflow server for logging trained runs.
-            model_name:            Registered model name in MLflow.
-            device:                "cuda", "cpu", or None (auto-detect).
-        """
         self.model_name_or_path = model_name_or_path
-        self.mlflow_tracking_uri = mlflow_tracking_uri
-        self.model_name = model_name
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.processor = Mask2FormerImageProcessor.from_pretrained(
-            model_name_or_path,
-            ignore_mismatched_sizes=True,
-        )
+        # We don't initialize hf_model or processor here if we are loading via MLflow
+        # because load_context will handle it.
+        if model_name_or_path:
+            self._setup_model(model_name_or_path)
 
-        # Reinitialise the classification head for a single class so pretrained
-        # COCO weights are used for the backbone + pixel decoder, but the
-        # classifier is fresh — correct for domain-specific fine-tuning.
-        config = Mask2FormerConfig.from_pretrained(model_name_or_path)
+    def _setup_model(self, path: str):
+        """Helper to initialize HF components from a specific path"""
+        self.processor = Mask2FormerImageProcessor.from_pretrained(path)
+        config = Mask2FormerConfig.from_pretrained(path)
         config.num_labels = 1
         self.hf_model = Mask2FormerForUniversalSegmentation.from_pretrained(
-            model_name_or_path,
-            config=config,
-            ignore_mismatched_sizes=True,
+            path, config=config, ignore_mismatched_sizes=True
         ).to(self.device)
 
-        logger.info("Loaded Mask2Former from '%s' on %s", model_name_or_path, self.device)
+    def load_context(self, context):
+        """
+        This is what MLflow calls automatically when using mlflow.pyfunc.load_model()
+        """
+        # Retrieve the path where MLflow downloaded the 'hf_weights' artifact
+        weights_path = context.artifacts["hf_weights"]
+        logger.info(f"Loading weights from MLflow context: {weights_path}")
+        self._setup_model(weights_path)
 
-    # -----------------------------------------------------------------------
-    # Inference
-    # -----------------------------------------------------------------------
-
-    def inference(self, request: InstanceSegmentationRequest) -> list[Contour]:
+    def predict(self,
+                context: Any,
+                request: InstanceSegmentationRequest,
+                params=None) -> list[Contour]:
         """
         Run instance segmentation on a single image.
 
@@ -150,11 +164,7 @@ class Mask2FormerSegmentationModel(BaseInstanceSegmentationModel):
 
         return contours
 
-    # -----------------------------------------------------------------------
-    # Training
-    # -----------------------------------------------------------------------
-
-    def train(self, request: InstanceSegmentationTrainingRequest) -> None:
+    def train(self, request: InstanceSegmentationTrainingRequest, **kwargs) -> None:
         """
         Full training pipeline — runs synchronously inside a Celery worker.
 
@@ -170,7 +180,7 @@ class Mask2FormerSegmentationModel(BaseInstanceSegmentationModel):
         if not request.annotation_file_url:
             raise ValueError("annotation_file_url is required for training.")
 
-        params = {**self.DEFAULT_HYPERPARAMETERS, **request.hyper_parameter}
+        params = {**self.default_hyperparameters, **request.hyper_parameter}
 
         logger.info(
             "Loading COCO dataset from '%s' with annotations '%s'…",
@@ -188,11 +198,6 @@ class Mask2FormerSegmentationModel(BaseInstanceSegmentationModel):
         final_loss = self._train(dataset, params)
 
         logger.info("Fine-tuning complete (final loss: %.4f). Logging to MLflow…", final_loss)
-
-
-    # -----------------------------------------------------------------------
-    # Training loop
-    # -----------------------------------------------------------------------
 
     def _train(
             self,
@@ -259,11 +264,6 @@ class Mask2FormerSegmentationModel(BaseInstanceSegmentationModel):
 
         self.hf_model.eval()
         return last_loss
-
-
-    # -----------------------------------------------------------------------
-    # Batch processing helper
-    # -----------------------------------------------------------------------
 
     @staticmethod
     def _collate_batch(batch: list[dict]) -> dict:
