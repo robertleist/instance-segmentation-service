@@ -11,7 +11,6 @@ from iquana_toolbox.schemas.database.labels import Label
 from iquana_toolbox.schemas.networking.http.services import InstanceSegmentationRequest
 from iquana_toolbox.schemas.training import InstanceSegmentationTrainingRequest
 from iquana_toolbox.ai.base_classes import InstanceSegmentationModel, InstanceSegmentationModelInfo
-from mlflow import register_model
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from transformers import (
@@ -20,7 +19,7 @@ from transformers import (
     Mask2FormerImageProcessor,
 )
 
-from util.registry_util import register_base_model
+from iquana_service_core import register_model
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,7 @@ DEFAULT_HF_MODEL = "facebook/mask2former-swin-tiny-coco-instance"
 # Model wrapper
 # ---------------------------------------------------------------------------
 
-@register_base_model()
+@register_model
 class Mask2Former(InstanceSegmentationModel):
     """
     Instance segmentation wrapper backed by Mask2Former (HuggingFace Transformers).
@@ -121,7 +120,7 @@ class Mask2Former(InstanceSegmentationModel):
 
     def predict(self,
                 context: Any,
-                request: InstanceSegmentationRequest,
+                request: list[InstanceSegmentationRequest],
                 params=None) -> list[Contour]:
         """
         Run instance segmentation on a single image.
