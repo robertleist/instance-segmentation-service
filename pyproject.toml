@@ -14,11 +14,12 @@ dependencies = [
     "mlflow>=2.10.0",
     "celery-types>=0.26.0",
     "torch>=2.11.0",
-    "transformers>=4.40.0",
+    "transformers>=4.56.0",  # DINOv3 model support landed in 4.56
     "timm>=0.9.0",
     "accelerate>=0.26.0",
     "requests>=2.31.0",
     "pillow>=10.0.0",
+    "scipy>=1.11.0",  # Hungarian matching (linear_sum_assignment) in the DINOv3 set loss
 ]
 
 [tool.uv.sources]
