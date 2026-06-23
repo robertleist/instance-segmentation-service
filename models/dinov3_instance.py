@@ -52,6 +52,8 @@ from torch.utils.data import DataLoader
 
 from iquana_service_core import register_model
 
+import paths
+
 logger = logging.getLogger(__name__)
 
 
@@ -228,7 +230,10 @@ class DinoV3InstanceSegmenter(InstanceSegmentationModel):
 
     def _build_backbone(self) -> None:
         self.backbone = DINOv3Backbone(
-            model_id=self.model_id, image_size=self.image_size, device=self.device
+            model_id=self.model_id,
+            image_size=self.image_size,
+            token=paths.HF_ACCESS_TOKEN,
+            device=self.device
         )
 
     def _build_head(self, num_classes: int) -> None:

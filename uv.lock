@@ -1437,7 +1437,7 @@ dependencies = [
 [[package]]
 name = "iquana-toolbox"
 version = "0.1.0"
-source = { git = "https://github.com/Iquana-tool/iquana-toolbox.git#51f8d920ffee0faa76577882fbe4b57cb053143a" }
+source = { git = "https://github.com/Iquana-tool/iquana-toolbox.git#ba343a2a9df2851abfda987486b29e3604d133b3" }
 dependencies = [
     { name = "cachetools" },
     { name = "mlflow" },
@@ -1447,6 +1447,8 @@ dependencies = [
     { name = "pydantic" },
     { name = "scipy" },
     { name = "scipy-stubs" },
+    { name = "torch" },
+    { name = "transformers" },
 ]
 
 [[package]]
