@@ -139,10 +139,13 @@ class _MaskDecoderHead(nn.Module):
 class DinoV3InstanceSegmenter(InstanceSegmentationModel):
     """Instance segmentation on frozen DINOv3 features with a trainable query head.
 
-    A base (untrained) instance has a randomly initialised head and is registered as
-    ``status="not_ready"``: it must be trained on a dataset's labels before it can
-    predict. Training rebuilds the head for the requested number of classes and only
-    optimises the head's parameters — the DINOv3 backbone stays frozen throughout.
+    A base instance has a randomly initialised head and must be trained on a dataset's
+    labels before it can predict (``predict`` returns ``[]`` until then). It is still
+    registered as ``status="ready"`` so it shows up in the model selection: the gateway
+    only ever lists ``status=="ready"`` models (``GET /models/all/available``), so a
+    ``not_ready`` model would be invisible — including for *picking it to train*.
+    Training rebuilds the head for the requested number of classes and only optimises
+    the head's parameters — the DINOv3 backbone stays frozen throughout.
     """
 
     model_info = InstanceSegmentationModelInfo(
@@ -163,14 +166,16 @@ class DinoV3InstanceSegmenter(InstanceSegmentationModel):
         info_url="https://huggingface.co/docs/transformers/model_doc/dinov3",
         tags={
             "task": "instance-segmentation",
-            "status": "not_ready",          # randomly-initialised head -> must train first
+            # "ready" so the model is selectable — the gateway only lists ready models.
+            # The untrained base predicts nothing until trained (predict returns []).
+            "status": "ready",
             "trainable": "true",
             "domain": "general",
             "publisher": "meta",
         },
         badges=["fast-training", "foundation-model"],
         trainable=True,
-        status="not_ready",
+        status="ready",
         label_ids=[],
         training_parameters=[
             HyperParameter(key="epochs", label="Epochs", default_value=20, type="int",
