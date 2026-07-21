@@ -1,10 +1,2 @@
-from fastapi import APIRouter
-
-
-router = APIRouter()
-session_router = APIRouter(prefix="/annotation_session", tags=["annotation_session"])
-
-
-@router.get("/health")
-async def health_check():
-    return {"status": "ok"}
+# Health and model-registry routes now come from iquana-service-core.
+# This package only holds service-specific routes (see inference.py, training.py).

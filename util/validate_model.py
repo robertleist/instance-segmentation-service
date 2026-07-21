@@ -7,15 +7,38 @@ from app.state import MODEL_REGISTRY
 
 
 def validate_model(request: Union[InstanceSegmentationRequest, InstanceSegmentationTrainingRequest]):
-    # Load a model like this. Note that this caches the loading, too!
-    model_info = MODEL_REGISTRY.get_model_info(request.model_registry_key)
-    if model_info["task"] != "instance-segmentation":
+    """Validate that the requested model exists and is usable for the request.
+
+    Tags are read straight off the registered model (string values) rather than
+    going through ``get_model_info`` / ``parse_tags_to_model_info``, which rebuilds
+    a full ``ModelInfo`` and fails when the registered tags only carry the
+    filterable subset (task/status/...).
+    """
+    try:
+        registered_model = MODEL_REGISTRY.client.get_registered_model(request.model_registry_key)
+    except Exception:
+        raise HTTPException(status_code=404,
+                            detail=f"Model '{request.model_registry_key}' is not registered.")
+    tags = registered_model.tags or {}
+
+    if tags.get("task") != "instance-segmentation":
         raise HTTPException(status_code=400,
-                            detail=f"Model {model_info["name"]} is not an instance segmentation model.")
-    # Check whether the model can predict the class
-    if not request.label.name in model_info["label"]:
-        raise HTTPException(status_code=400,
-                            detail=f"Model {model_info["name"]} predicts {model_info['label']} not requested label {request.label.name}.")
-    if type(request) == InstanceSegmentationTrainingRequest and not model_info["trainable"]:
-        raise HTTPException(status_code=400,
-                            detail=f"Model {model_info["name"]} is not trainable!")
+                            detail=f"Model {request.model_registry_key} is not an instance segmentation model.")
+
+    is_training = isinstance(request, InstanceSegmentationTrainingRequest)
+
+    if is_training:
+        # Training *adds* the classes in ``request.labels``; do not require the base
+        # model to already predict them. Only enforce that the model is trainable.
+        if str(tags.get("trainable", "")).lower() != "true":
+            raise HTTPException(status_code=400,
+                                detail=f"Model {request.model_registry_key} is not trainable!")
+        return
+
+    # Inference: if a label filter is given and the model declares its class set,
+    # make sure the requested label is one the model can predict.
+    if request.label is not None and tags.get("label_ids"):
+        if str(request.label.id) not in tags.get("label_ids"):
+            raise HTTPException(status_code=400,
+                                detail=f"Model {request.model_registry_key} does not predict "
+                                       f"label {request.label.name} (id {request.label.id}).")
