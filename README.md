@@ -1,4 +1,26 @@
-# Template Repository
+# IQUANA Instance Segmentation Service
+
+> [!CAUTION]
+> **Deprecated — this service is no longer maintained or deployed.**
+>
+> It has been merged into the unified **[IQUANA AI service](https://github.com/Iquana-tool/ai-service)**,
+> which serves every AI task from one model-centric codebase. The per-task split was dropped because
+> models cross task boundaries (SAM3 does instance suggestion *and* prompted segmentation *and* more),
+> which forced the same model to be reimplemented in up to three repos.
+>
+> **Where this service's functionality lives now:** the `instance-segmentation` task surface of the
+> unified service, mounted at `http://<host>:8004/instance-segmentation`. Relative paths are unchanged,
+> so `POST /inference` becomes `POST /instance-segmentation/inference` and `POST /annotation_session/run`
+> becomes `POST /instance-segmentation/annotation_session/run`. The backend picks this up from a single
+> `AI_SERVICE_URL` setting; drop any `INSTANCE_SEGMENTATION_BACKEND_URL` pin from your `.env`.
+>
+> **Do not add models or features here.** Port them to `ai-service/models/` against the capability-model
+> interface instead.
+>
+> Everything below is the original template README, kept for historical reference only. If you are looking
+> for a starting point for a *new* service, use
+> [template-service](https://github.com/Iquana-tool/template-service).
+
 This is a template repository meant to be used to add new services to the IQUANA annotation tool. You can copy this repository to implement your own service for the tool. 
 >[!IMPORTANT]
 > With this repo you can only implement your own service to run on its own. To be able to use it in the annotation tool, you still need to add it to the main API and depending on your service the frontend (to add the needed inputs). 
